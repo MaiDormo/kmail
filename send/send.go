@@ -232,7 +232,12 @@ func Run(opt Options, out, errOut *os.File) int {
 	if cap_ <= 0 {
 		age := campaign.DomainAgeDays(now)
 		cap_ = campaign.DailyCap(age)
-		capNote = fmt.Sprintf(" (ramp: %d days since the domain was registered)", age)
+		if campaign.DailyCapOverride > 0 {
+			capNote = fmt.Sprintf(" (daily_cap in campaign.json; the ramp would say %d at %d days old)",
+				campaign.RampAt(age), age)
+		} else {
+			capNote = fmt.Sprintf(" (ramp: %d days since the domain was registered)", age)
+		}
 	}
 	already := SentToday(now)
 	room := cap_ - already

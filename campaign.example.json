@@ -6,7 +6,14 @@
   "smtp_host": "smtp.gmail.com",
   "domain_registered": "2026-01-01",
   "postal": "1 Example Street, 00000 Example City, Country",
-  "forbidden_extra": ["a name this campaign must never print"],
-  "source_lists": ["prospects.csv"],
-  "master_csvs": ["prospects.csv"]
+  "forbidden_extra": [
+    "a name this campaign must never print"
+  ],
+  "source_lists": [
+    "prospects.csv"
+  ],
+  "master_csvs": [
+    "prospects.csv"
+  ],
+  "daily_cap": 0
 }

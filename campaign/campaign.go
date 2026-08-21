@@ -97,6 +97,7 @@ type Identity struct {
 	ForbiddenExtra   []string `json:"forbidden_extra"` // names this campaign must never print
 	SourceLists      []string `json:"source_lists"`    // CSVs to build from, first match wins
 	MasterCSVs       []string `json:"master_csvs"`     // CSVs `verify --write` marks up
+	DailyCapOverride int      `json:"daily_cap"`       // 0 uses the warm-up ramp
 }
 
 var (
@@ -141,6 +142,7 @@ func LoadIdentity() error {
 	Forbidden = append(Forbidden, id.ForbiddenExtra...)
 	TemplateForbidden = append(TemplateForbidden, id.ForbiddenExtra...)
 	SourceLists, MasterCSVs = id.SourceLists, id.MasterCSVs
+	DailyCapOverride = id.DailyCapOverride
 	return nil
 }
 
@@ -364,7 +366,22 @@ var ramp = []struct {
 
 const RampMax = 500
 
+// DailyCapOverride replaces the ramp entirely when campaign.json sets daily_cap. The ramp exists
+// because a young domain sending at volume is how a domain gets filtered rather than throttled;
+// overriding it is a deliberate choice about reputation, so it lives in config and not in a flag
+// default.
+var DailyCapOverride int
+
 func DailyCap(ageDays int) int {
+	if DailyCapOverride > 0 {
+		return DailyCapOverride
+	}
+	return RampAt(ageDays)
+}
+
+// RampAt is what the warm-up ramp would allow, whether or not an override is in force. Worth
+// printing next to an override so the gap is visible rather than forgotten.
+func RampAt(ageDays int) int {
 	for _, r := range ramp {
 		if ageDays < r.Days {
 			return r.Cap

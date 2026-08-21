@@ -146,6 +146,20 @@ func TestAnIntentWithNoSentIsNeverRetried(t *testing.T) {
 	}
 }
 
+// daily_cap in campaign.json replaces the ramp; 0 falls back to it.
+func TestDailyCapOverrideBeatsTheRamp(t *testing.T) {
+	old := campaign.DailyCapOverride
+	defer func() { campaign.DailyCapOverride = old }()
+	campaign.DailyCapOverride = 0
+	if got := campaign.DailyCap(0); got != 40 {
+		t.Errorf("ramp gave %d for a new domain, want 40", got)
+	}
+	campaign.DailyCapOverride = 1000
+	if got := campaign.DailyCap(0); got != 1000 {
+		t.Errorf("override gave %d, want 1000", got)
+	}
+}
+
 func TestSentTodayCountsOnlyToday(t *testing.T) {
 	sandbox(t)
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
