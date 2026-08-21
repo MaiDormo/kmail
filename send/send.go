@@ -320,7 +320,12 @@ func Run(opt Options, out, errOut *os.File) int {
 			e("\ndaily cap of %d already reached. Nothing sent.", cap_)
 			return ExitCap
 		}
+		// one limit, not two: the daily cap is the safety rail, and --count only ever sends fewer.
+		// A second default batch size silently won over the cap and surprised everyone.
 		n := opt.Count
+		if n <= 0 {
+			n = len(queue)
+		}
 		// on a dry run the cap is reported, not enforced: you still want to see what is next
 		if opt.Send && n > room {
 			n = room

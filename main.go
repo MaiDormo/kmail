@@ -419,7 +419,7 @@ func okFail(ok bool) string {
 func cmdSend(args []string) int {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	doSend := fs.Bool("send", false, "actually transmit")
-	count := fs.Int("count", 50, "")
+	count := fs.Int("count", 0, "send at most this many; 0 means as many as the daily cap allows")
 	maxPerDay := fs.Int("max-per-day", 0, "default comes from the warm-up ramp for the domain age")
 	delay := fs.Float64("delay", 4.0, "seconds between messages, before jitter")
 	toSelf := fs.Bool("to-self", false, "one message to the reviewer instead, for a rendering check")

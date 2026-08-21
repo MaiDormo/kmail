@@ -147,6 +147,34 @@ func TestAnIntentWithNoSentIsNeverRetried(t *testing.T) {
 }
 
 // daily_cap in campaign.json replaces the ramp; 0 falls back to it.
+// --count 0 means "whatever the cap allows", so there is one limit rather than two.
+func TestCountDefaultsToTheCap(t *testing.T) {
+	rows, err := build.ReadQueue()
+	if err != nil || len(rows) == 0 {
+		t.Skip("no queue")
+	}
+	old := campaign.Home
+	dir := t.TempDir()
+	campaign.SetHome(dir)
+	defer campaign.SetHome(old)
+	copyFile(t, old+"/queue.jsonl", campaign.Queue)
+	copyFile(t, old+"/kairos-campaign-v2-dark.html", campaign.Template)
+	copyFile(t, old+"/kairos-general-dark.html", campaign.Home+"/kairos-general-dark.html")
+	queued, _ := build.ReadQueue()
+	approve(t, queued...)
+
+	sent := 0
+	tr := func(preflight.Row, string) error { sent++; return nil }
+	// a cap of 7 with no --count must send exactly 7, not a hidden default of 50
+	if code := Run(Options{Send: true, MaxPerDay: 7, Delay: time.Nanosecond, Transport: tr},
+		devNull(t), devNull(t)); code != ExitOK {
+		t.Fatalf("exit %d", code)
+	}
+	if sent != 7 {
+		t.Errorf("sent %d, want the cap of 7", sent)
+	}
+}
+
 func TestDailyCapOverrideBeatsTheRamp(t *testing.T) {
 	old := campaign.DailyCapOverride
 	defer func() { campaign.DailyCapOverride = old }()
