@@ -1,0 +1,12 @@
+{
+  "sender": "you@example.com",
+  "sender_name": "Your Name",
+  "signature": "Your Name",
+  "reviewer": "you@personal.example.com",
+  "smtp_host": "smtp.gmail.com",
+  "domain_registered": "2026-01-01",
+  "postal": "1 Example Street, 00000 Example City, Country",
+  "forbidden_extra": ["a name this campaign must never print"],
+  "source_lists": ["prospects.csv"],
+  "master_csvs": ["prospects.csv"]
+}

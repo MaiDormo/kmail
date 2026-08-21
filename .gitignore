@@ -1,0 +1,22 @@
+# Nothing about a real campaign belongs in this repository. The data lives in $KMAIL_HOME
+# (default ~/outreach) and the test fixtures live in $KMAIL_HOME/fixtures, both deliberately
+# outside this tree — these rules are the second line of defence, not the first.
+queue.jsonl
+ledger.tsv
+contacted.txt
+held.txt
+bounced.txt
+invalid.txt
+approvals.json
+gmail_sent.txt
+mx-cache.json
+validated.json
+drafts/
+fixtures/
+testdata/
+*.csv
+*.eml
+
+# the built binary
+kmail
+kmail-go
