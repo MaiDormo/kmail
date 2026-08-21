@@ -89,17 +89,19 @@ func SetHome(dir string) {
 // the tool is published and the campaign is not. Put it in $KMAIL_HOME/campaign.json — see
 // campaign.example.json — and it is loaded at startup.
 type Identity struct {
-	Sender           string   `json:"sender"`
-	SenderName       string   `json:"sender_name"`
-	Signature        string   `json:"signature"`
-	Reviewer         string   `json:"reviewer"`
-	SMTPHost         string   `json:"smtp_host"`
-	DomainRegistered string   `json:"domain_registered"`
-	Postal           string   `json:"postal"`          // required in the HTML, legally
-	ForbiddenExtra   []string `json:"forbidden_extra"` // names this campaign must never print
-	SourceLists      []string `json:"source_lists"`    // CSVs to build from, first match wins
-	MasterCSVs       []string `json:"master_csvs"`     // CSVs `verify --write` marks up
-	DailyCapOverride int      `json:"daily_cap"`       // 0 uses the warm-up ramp
+	Sender           string            `json:"sender"`
+	SenderName       string            `json:"sender_name"`
+	Signature        string            `json:"signature"`
+	Reviewer         string            `json:"reviewer"`
+	SMTPHost         string            `json:"smtp_host"`
+	DomainRegistered string            `json:"domain_registered"`
+	Postal           string            `json:"postal"`             // required in the HTML, legally
+	ForbiddenExtra   []string          `json:"forbidden_extra"`    // names this campaign must never print
+	SourceLists      []string          `json:"source_lists"`       // CSVs to build from, first match wins
+	MasterCSVs       []string          `json:"master_csvs"`        // CSVs `verify --write` marks up
+	DailyCapOverride int               `json:"daily_cap"`          // 0 uses the warm-up ramp
+	AudienceBySource map[string]string `json:"audience_by_source"` // CSV source value -> audience
+	DefaultAudience  string            `json:"default_audience"`
 }
 
 var (
@@ -113,6 +115,72 @@ var (
 
 // LoadIdentity reads $KMAIL_HOME/campaign.json. Absent, the tool still builds and tests but will
 // not send: there is nobody to send as.
+// generalOpeners never assume the reader owns footage: most of this audience does not.
+var generalOpeners = []RoleOpener{
+	{
+		Role: "production",
+		Match: regexp.MustCompile(`(?i)\b(producer|production|post-production|editor|editing|camera|videographer|` +
+			`cinematographer|dop|colou?rist)\b`),
+		WithCo:    "If you cut video at {company}, the slow part isn’t the edit. It’s finding the moment worth cutting to.",
+		WithoutCo: "If you cut video, the slow part isn’t the edit. It’s finding the moment worth cutting to.",
+	},
+	{
+		Role: "engineering",
+		Match: regexp.MustCompile(`(?i)\b(engineer|engineering|architect|cto|technical|developer|technology|` +
+			`systems|devops|platform|infrastructure)\b`),
+		WithCo:    "If {company} stores video, this turns it into something you can query instead of something you pay to keep.",
+		WithoutCo: "If you store video, this turns it into something you can query instead of something you pay to keep.",
+	},
+	{
+		Role: "content",
+		Match: regexp.MustCompile(`(?i)\b(content|editorial|programming|journalist|news|archive|archivist|librarian|` +
+			`marketing|brand|social|communications|audience)\b`),
+		WithCo:    "Anything long that {company} records gets more useful when you can ask it a question instead of watching it again.",
+		WithoutCo: "Anything long you record gets more useful when you can ask it a question instead of watching it again.",
+	},
+	{
+		Role:      "generic",
+		Match:     nil,
+		WithCo:    "If {company} has hours of video sitting somewhere, this is worth two minutes of your time.",
+		WithoutCo: "If you have hours of video sitting somewhere, this is worth two minutes of your time.",
+	},
+}
+
+// the sport-specific questions make no sense to this audience
+var generalExamples = []searchExample{
+	{regexp.MustCompile(`(?i)football|soccer|tennis|cricket|basket|rugby|motor|racing|sport`),
+		"“show me every goal scored with a header”"},
+	{regexp.MustCompile(`(?i)news|journal|bulletin|press|editorial|publish`),
+		"“find every mention of the budget in last night’s bulletin”"},
+	{regexp.MustCompile(`(?i)teach|learn|train|course|academy|school|univers|webinar|confer`),
+		"“find the part where they explain the pricing model”"},
+}
+
+func init() {
+	Audiences["broadcast"] = &Audience{
+		Name: "broadcast", TemplateFile: "kairos-campaign-v2-dark.html",
+		Subjects: Subjects, RequiredHTML: RequiredHTML,
+		Openers: RoleOpeners, Examples: searchExamples, Example: SearchDefault,
+	}
+	Audiences["general"] = &Audience{
+		Name: "general", TemplateFile: "kairos-general-dark.html",
+		Subjects: []string{
+			"KAIROS: turn a long video into its highlights",
+			"Hours of video, and the minutes that matter",
+			"A tool for anyone sitting on hours of video",
+			"Find the moments worth keeping, automatically",
+		},
+		RequiredHTML: []string{
+			"Hours of video, and the few minutes that matter", // preheader
+			"NEXT-GEN AISA",
+			"https://kairosapp.tech",
+			"unsubscribe",
+		},
+		Openers: generalOpeners, Examples: generalExamples,
+		Example: "“find the part where they explain the pricing model”",
+	}
+}
+
 func LoadIdentity() error {
 	Sender, SenderName, Signature, Reviewer = "", "", "", ""
 	b, err := os.ReadFile(filepath.Join(Home, "campaign.json"))
@@ -140,10 +208,19 @@ func LoadIdentity() error {
 	DomainRegistered = id.DomainRegistered
 	if id.Postal != "" {
 		RequiredHTML = append(RequiredHTML, id.Postal)
+		for _, a := range Audiences {
+			a.RequiredHTML = append(a.RequiredHTML, id.Postal)
+		}
 	}
 	Forbidden = append(Forbidden, id.ForbiddenExtra...)
 	TemplateForbidden = append(TemplateForbidden, id.ForbiddenExtra...)
 	SourceLists, MasterCSVs = id.SourceLists, id.MasterCSVs
+	if len(id.AudienceBySource) > 0 {
+		AudienceBySource = id.AudienceBySource
+	}
+	if id.DefaultAudience != "" {
+		DefaultAudience = id.DefaultAudience
+	}
 	DailyCapOverride = id.DailyCapOverride
 	return nil
 }
@@ -196,6 +273,41 @@ const (
 )
 
 var Address = regexp.MustCompile(`(?i)^[^\s@,;<>"]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// An Audience is a template and the copy that goes with it. The list is not one population: some
+// contacts came from a prospect search of sports organisations, and the rest from a marketing
+// newsletter with no video business at all. One pitch cannot be true for both, and a false premise
+// is worse than a generic one.
+type Audience struct {
+	Name         string
+	TemplateFile string
+	Subjects     []string
+	RequiredHTML []string
+	Openers      []RoleOpener
+	Examples     []searchExample
+	Example      string // the fallback
+}
+
+func (a *Audience) Template() string { return filepath.Join(Home, a.TemplateFile) }
+
+// Audiences are keyed by name; campaign.json maps a CSV source column value onto one.
+var Audiences = map[string]*Audience{}
+
+var (
+	AudienceBySource map[string]string
+	DefaultAudience  = "broadcast"
+)
+
+// AudienceFor picks the copy for one contact. An unmapped source gets the default rather than an
+// error: a new source value in the CSV must not stop a build, it must just be unsurprising.
+func AudienceFor(source string) *Audience {
+	if name, ok := AudienceBySource[strings.TrimSpace(source)]; ok {
+		if a := Audiences[name]; a != nil {
+			return a
+		}
+	}
+	return Audiences[DefaultAudience]
+}
 
 // RoleOpener is one shape of the per-contact line: a role to match, and the copy with and without a
 // company name.
@@ -272,31 +384,31 @@ var searchExamples = []searchExample{
 
 const SearchDefault = "“show me all the goals scored with a header”"
 
-func SearchExample(company, domain, title string) string {
+func SearchExample(a *Audience, company, domain, title string) string {
 	hay := company + " " + domain + " " + title
-	for _, s := range searchExamples {
+	for _, s := range a.Examples {
 		if s.match.MatchString(hay) {
 			return s.example
 		}
 	}
-	return SearchDefault
+	return a.Example
 }
 
 // ShapeID identifies one piece of copy, independent of which company is interpolated into it.
 // Reviewing 12 of these covers all 257 rows; reviewing the rendered paragraphs would be 231.
-func ShapeID(role string, named bool) string {
+func ShapeID(audience, role string, named bool) string {
 	which := "plain"
 	if named {
 		which = "named"
 	}
-	sum := sha1.Sum([]byte(role + "|" + which))
+	sum := sha1.Sum([]byte(audience + "|" + role + "|" + which))
 	return hex.EncodeToString(sum[:])[:8]
 }
 
 // Opener picks the per-contact line: role first, company second, generic last - and never a line
 // naming a company the list did not give us a usable name for.
-func Opener(title, company string) (line, role string, named bool) {
-	for _, o := range RoleOpeners {
+func Opener(a *Audience, title, company string) (line, role string, named bool) {
+	for _, o := range a.Openers {
 		if o.Match != nil && !o.Match.MatchString(title) {
 			continue
 		}

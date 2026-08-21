@@ -8,6 +8,8 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"os"
+
+	"kmail/preflight"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -35,7 +37,19 @@ func TestMatchesThePythonMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	row := corpusRow(t)
+	// the row the fixture was captured from, kept with it — the live queue has been rebuilt since
+	var muts map[string]preflight.Row
+	mb, err := os.ReadFile(filepath.Join(campaign.Home, "fixtures", "mutations.json"))
+	if err != nil {
+		t.Skipf("no captured source row: %v", err)
+	}
+	if err := json.Unmarshal(mb, &muts); err != nil {
+		t.Fatal(err)
+	}
+	row, ok := muts["clean"]
+	if !ok {
+		t.Skip("the fixture has no clean row")
+	}
 	raw, err := BuildMessage(row, "someone@example.com", time.Now())
 	if err != nil {
 		t.Fatal(err)

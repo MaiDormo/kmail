@@ -40,6 +40,19 @@ type Row struct {
 	Hash      string   `json:"hash,omitempty"`
 	Shape     string   `json:"shape,omitempty"`
 	Name      string   `json:"name,omitempty"`
+	Audience  string   `json:"audience,omitempty"`
+}
+
+// Aud is the copy set this row was built from. A row with no audience predates the split and is
+// the original broadcast copy.
+func (r Row) Aud() *campaign.Audience {
+	if r.Audience == "" {
+		return campaign.Audiences[campaign.DefaultAudience]
+	}
+	if a := campaign.Audiences[r.Audience]; a != nil {
+		return a
+	}
+	return campaign.Audiences[campaign.DefaultAudience]
 }
 
 func (r Row) Addr() string {
@@ -73,7 +86,8 @@ func CheckRow(r Row) []string {
 		bad = append(bad, "addressed to the sending mailbox")
 	}
 
-	if !contains(campaign.Subjects, r.Subject) {
+	aud := r.Aud()
+	if !contains(aud.Subjects, r.Subject) {
 		bad = append(bad, fmt.Sprintf("subject not in the approved set: %q", r.Subject))
 	}
 	if strings.ContainsAny(r.Subject, "\n\r") {
@@ -94,7 +108,7 @@ func CheckRow(r Row) []string {
 	}
 
 	lowerHTML := strings.ToLower(r.HTMLBody)
-	for _, marker := range campaign.RequiredHTML {
+	for _, marker := range aud.RequiredHTML {
 		if !strings.Contains(lowerHTML, strings.ToLower(marker)) {
 			bad = append(bad, fmt.Sprintf("html is missing %q", marker))
 		}

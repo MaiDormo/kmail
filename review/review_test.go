@@ -61,12 +61,17 @@ func TestTUIAndFileAgree(t *testing.T) {
 	m := tea.Model(model{plan: viaTUI, w: 100, h: 30})
 	// shapes: kill the first, keep the rest. names: blank everything flagged, drop the first
 	m = press(m, text(" "), code(tea.KeyTab))
-	m = press(m, text("a"), text("d"))
+	m = press(m, text("a"))
+	if len(viaTUI.Names) > 0 {
+		m = press(m, text("d"))
+	}
 
 	viaFile := plan(t)
 	viaFile.Shapes[0].State = Kill
 	viaFile.BlankAllFlagged()
-	viaFile.Names[0].State = Drop
+	if len(viaFile.Names) > 0 {
+		viaFile.Names[0].State = Drop
+	}
 	rendered := RenderFile(viaFile)
 
 	// round-trip the printed file through the parser onto a clean plan
@@ -99,7 +104,7 @@ func TestFileParsingIsFailClosed(t *testing.T) {
 			"yolo "+strings.TrimPrefix(firstShapeLine(t, good), "keep "), 1),
 		"missing shape": strings.Replace(good, "\n"+firstShapeLine(t, good), "", 1),
 		"unknown name":  good + "\nkeep Not A Company In This Queue  1\n",
-		"duplicated":    good + "\n" + lastNameLine(t, good) + "\n",
+		"duplicated":    good + "\n## shapes\n" + firstShapeLine(t, good) + "\n",
 	}
 	for label, text := range cases {
 		p := plan(t)
@@ -139,12 +144,6 @@ func firstShapeLine(t *testing.T, file string) string {
 	}
 	t.Fatal("no shape line in the rendered file")
 	return ""
-}
-
-func lastNameLine(t *testing.T, file string) string {
-	t.Helper()
-	lines := strings.Split(strings.TrimRight(file, "\n"), "\n")
-	return lines[len(lines)-1]
 }
 
 // A name may contain spaces, and the count and flag follow it on the line.

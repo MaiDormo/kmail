@@ -65,7 +65,8 @@ func TestOnlyRejectsAnUnknownAddress(t *testing.T) {
 	defer campaign.SetHome(old)
 	copyFile(t, old+"/queue.jsonl", campaign.Queue)
 	copyFile(t, old+"/kairos-campaign-v2-dark.html", campaign.Template)
-	copyFile(t, old+"/approvals.json", campaign.Approvals)
+	queued, _ := build.ReadQueue()
+	approve(t, queued...)
 	sent := 0
 	tr := func(preflight.Row, string) error { sent++; return nil }
 	code := Run(Options{Send: true, Only: "nobody@nowhere.example", Transport: tr}, devNull(t), devNull(t))

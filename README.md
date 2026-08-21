@@ -58,6 +58,25 @@ is recorded like any other send, which `--to` deliberately is not.
 **Delivery is at most once.** The ledger is written twice per message — `INTENT` and fsync before
 the send, `SENT` and fsync after. A crash between them leaves an address that is never retried.
 
+## Audiences
+
+A list is rarely one population. Ours was a prospect search of sports organisations plus a marketing
+newsletter with no video business at all, and one pitch cannot be true for both — a false premise is
+worse than a generic one.
+
+An audience is a template plus the copy that goes with it: subjects, opener shapes, the search
+example, and the markers that prove the HTML arrived whole. `campaign.json` maps a value in the
+CSV's `source` column onto one:
+
+```json
+"audience_by_source": { "apollo-sport": "broadcast", "marketing-newsletter": "general" },
+"default_audience": "broadcast"
+```
+
+Shape IDs are namespaced by audience, so approving copy for one can never cover the other. An
+unmapped source falls back to the default rather than failing: a new value in the CSV should be
+unsurprising, not fatal.
+
 ## Setup
 
 Copy `campaign.example.json` to `$KMAIL_HOME/campaign.json` (default `~/outreach`) and fill in the

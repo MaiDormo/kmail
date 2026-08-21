@@ -126,6 +126,7 @@ func Candidates(rows []csvRow, exclude map[string]bool, requireVideo bool) []Con
 		if campaign.DropEmail.MatchString(email) || campaign.NoiseLocal.MatchString(local) {
 			continue
 		}
+		aud := campaign.AudienceFor(pick(r, "source"))
 		company := pick(r, "company", "company_name", "organization", "account_name")
 		title := pick(r, "title", "job_title", "position")
 		switch strings.ToLower(title) {
@@ -141,7 +142,8 @@ func Candidates(rows []csvRow, exclude map[string]bool, requireVideo bool) []Con
 			campaign.DropCompany.MatchString(company) {
 			continue
 		}
-		if requireVideo && !campaign.VideoSignal.MatchString(company+" "+domain+" "+title) {
+		if requireVideo && aud.Name == campaign.DefaultAudience &&
+			!campaign.VideoSignal.MatchString(company+" "+domain+" "+title) {
 			continue
 		}
 		seen[email] = true
@@ -150,7 +152,7 @@ func Candidates(rows []csvRow, exclude map[string]bool, requireVideo bool) []Con
 			name = domain
 		}
 		out = append(out, Contact{
-			Email: email, FirstName: first, Company: name,
+			Audience: aud, Email: email, FirstName: first, Company: name,
 			SafeCompany: CleanCompany(company), Title: title, Domain: domain,
 		})
 	}
@@ -191,9 +193,13 @@ func Build(opt BuildOptions, log func(string, ...any)) error {
 	}
 	defer lock.Close()
 
-	tpl, err := LoadTemplate()
-	if err != nil {
-		return err
+	templates := map[string]string{}
+	for name, a := range campaign.Audiences {
+		t, err := LoadTemplateFor(a)
+		if err != nil {
+			return fmt.Errorf("audience %q: %w", name, err)
+		}
+		templates[name] = t
 	}
 
 	exclude := LoadExclusions()
@@ -308,8 +314,15 @@ func Build(opt BuildOptions, log func(string, ...any)) error {
 
 	var payloads []preflight.Row
 	used := map[string]bool{}
-	for i, c := range final {
-		row, doc, err := RenderRow(tpl, c, campaign.Subjects[i%len(campaign.Subjects)], nil)
+	perAudience := map[string]int{}
+	for _, c := range final {
+		a := c.Audience
+		if a == nil {
+			a = campaign.Audiences[campaign.DefaultAudience]
+		}
+		seq := perAudience[a.Name]
+		perAudience[a.Name] = seq + 1
+		row, doc, err := RenderRow(templates[a.Name], c, a.Subjects[seq%len(a.Subjects)], nil)
 		if err != nil {
 			return err
 		}
@@ -349,7 +362,9 @@ func Build(opt BuildOptions, log func(string, ...any)) error {
 	}
 	named, shapes := 0, map[string]bool{}
 	greeted := 0
+	byAud := map[string]int{}
 	for _, p := range payloads {
+		byAud[p.Audience]++
 		if p.Name != "" {
 			named++
 		}
@@ -362,8 +377,25 @@ func Build(opt BuildOptions, log func(string, ...any)) error {
 	log("greeted by name : %d", greeted)
 	log("company named   : %d", named)
 	log("shapes in use   : %d", len(shapes))
+	for _, a := range sortedCounts(byAud) {
+		log("  audience %-10s %d", a.k, a.n)
+	}
 	log("\nnothing is sendable until `kmail review` approves the copy.")
 	return nil
+}
+
+type kv struct {
+	k string
+	n int
+}
+
+func sortedCounts(m map[string]int) []kv {
+	out := make([]kv, 0, len(m))
+	for k, n := range m {
+		out = append(out, kv{k, n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].n > out[j].n })
+	return out
 }
 
 func orDomain(c Contact) string {

@@ -36,7 +36,11 @@ var (
 
 // LoadTemplate reads the template and refuses it if it has lost a slot or regained a forbidden word.
 func LoadTemplate() (string, error) {
-	b, err := os.ReadFile(campaign.Template)
+	return LoadTemplateFor(campaign.Audiences[campaign.DefaultAudience])
+}
+
+func LoadTemplateFor(a *campaign.Audience) (string, error) {
+	b, err := os.ReadFile(a.Template())
 	if err != nil {
 		return "", err
 	}
@@ -177,6 +181,7 @@ func Render(tpl, greeting, openerLine, example string) (doc, frag, text string, 
 
 // Contact is one row of the master list, after filtering.
 type Contact struct {
+	Audience    *campaign.Audience
 	Email       string
 	FirstName   string
 	Company     string // raw, as the list has it — used for the search example
@@ -196,8 +201,12 @@ func RenderRow(tpl string, c Contact, subject string, nameOverride *string) (pre
 	if c.FirstName != "" {
 		greeting = "Hi " + c.FirstName + ","
 	}
-	line, role, named := campaign.Opener(c.Title, safe)
-	example := campaign.SearchExample(c.Company, c.Domain, c.Title)
+	aud := c.Audience
+	if aud == nil {
+		aud = campaign.Audiences[campaign.DefaultAudience]
+	}
+	line, role, named := campaign.Opener(aud, c.Title, safe)
+	example := campaign.SearchExample(aud, c.Company, c.Domain, c.Title)
 	doc, frag, text, err := Render(tpl, greeting, line, example)
 	if err != nil {
 		return preflight.Row{}, "", err
@@ -209,7 +218,7 @@ func RenderRow(tpl string, c Contact, subject string, nameOverride *string) (pre
 	row := preflight.Row{
 		To: []string{c.Email}, Subject: subject, Body: text, HTMLBody: frag,
 		Company: c.Company, Title: c.Title, FirstName: c.FirstName,
-		Shape: campaign.ShapeID(role, named), Name: name,
+		Shape: campaign.ShapeID(aud.Name, role, named), Name: name, Audience: aud.Name,
 	}
 	row.Hash = preflight.ContentHash(row)
 	return row, doc, nil
@@ -223,6 +232,7 @@ func RenderRow(tpl string, c Contact, subject string, nameOverride *string) (pre
 // with the looser one. ok is false when no candidate reproduces the body, which means the row was
 // not produced by this campaign's copy and no approval can honestly cover it.
 func Attribute(r preflight.Row) (shape, name string, ok bool) {
+	aud := r.Aud()
 	raw := strings.TrimSpace(r.Company)
 	seen := map[string]bool{}
 	for _, cand := range []string{CleanCompany(raw), raw, ""} {
@@ -230,17 +240,17 @@ func Attribute(r preflight.Row) (shape, name string, ok bool) {
 			continue
 		}
 		seen[cand] = true
-		line, role, named := campaign.Opener(r.Title, cand)
+		line, role, named := campaign.Opener(aud, r.Title, cand)
 		if strings.Contains(r.Body, line) {
 			n := ""
 			if named {
 				n = cand
 			}
-			return campaign.ShapeID(role, named), n, true
+			return campaign.ShapeID(aud.Name, role, named), n, true
 		}
 	}
-	_, role, named := campaign.Opener(r.Title, CleanCompany(raw))
-	return campaign.ShapeID(role, named), "", false
+	_, role, named := campaign.Opener(aud, r.Title, CleanCompany(raw))
+	return campaign.ShapeID(aud.Name, role, named), "", false
 }
 
 // ---------------------------------------------------------------- the queue file

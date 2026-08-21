@@ -1,13 +1,42 @@
 package send
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
 	"kmail/build"
 	"kmail/campaign"
 	"kmail/preflight"
+	"kmail/review"
 )
+
+// approve exactly these rows' copy, so a test never depends on whatever the last real review
+// happened to seal.
+func approve(t *testing.T, rows ...preflight.Row) {
+	t.Helper()
+	sha, err := campaign.TemplateSHA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := review.Approval{ApprovedAt: "test", TemplateSHA: sha}
+	seenShape, seenName := map[string]bool{}, map[string]bool{}
+	for _, r := range rows {
+		shape, name, _ := build.Attribute(r)
+		if !seenShape[shape] {
+			seenShape[shape] = true
+			rec.Shapes = append(rec.Shapes, shape)
+		}
+		if name != "" && !seenName[name] {
+			seenName[name] = true
+			rec.Names = append(rec.Names, name)
+		}
+	}
+	b, _ := json.Marshal(rec)
+	if err := os.WriteFile(campaign.Approvals, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // A one-off is a real send, so every guarantee the queue gets applies to it too.
 func oneRow(t *testing.T, addr, company string) preflight.Row {
@@ -48,9 +77,9 @@ func TestOneObeysTheGate(t *testing.T) {
 }
 
 func TestOneWillNotMailSomebodyTwice(t *testing.T) {
-	old := oneSandbox(t)
-	copyFile(t, old+"/approvals.json", campaign.Approvals)
+	oneSandbox(t)
 	row := oneRow(t, "stranger@example.com", "")
+	approve(t, row)
 	if err := os.WriteFile(campaign.Contacted, []byte("stranger@example.com\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -66,9 +95,9 @@ func TestOneWillNotMailSomebodyTwice(t *testing.T) {
 
 // The whole reason One exists rather than --to: the send has to be recorded, or it can happen again.
 func TestOneRecordsWhatItSent(t *testing.T) {
-	old := oneSandbox(t)
-	copyFile(t, old+"/approvals.json", campaign.Approvals)
+	oneSandbox(t)
 	row := oneRow(t, "stranger@example.com", "")
+	approve(t, row)
 	code := One(row, Options{Send: true, Transport: func(preflight.Row, string) error { return nil }},
 		devNull(t), devNull(t))
 	if code != ExitOK {
@@ -91,9 +120,9 @@ func TestOneRecordsWhatItSent(t *testing.T) {
 
 // The cap stops a send, not a preview.
 func TestOneDryRunPreviewsPastTheCap(t *testing.T) {
-	old := oneSandbox(t)
-	copyFile(t, old+"/approvals.json", campaign.Approvals)
+	oneSandbox(t)
 	row := oneRow(t, "stranger@example.com", "")
+	approve(t, row)
 	if code := One(row, Options{MaxPerDay: 0}, devNull(t), devNull(t)); code != ExitOK {
 		t.Errorf("dry run exited %d", code)
 	}

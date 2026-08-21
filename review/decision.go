@@ -266,9 +266,13 @@ type Approval struct {
 
 // Apply rewrites the queue to match the decisions, then records what was approved.
 func Apply(p *Plan, log func(string, ...any)) error {
-	tpl, err := build.LoadTemplate()
-	if err != nil {
-		return err
+	templates := map[string]string{}
+	for name, a := range campaign.Audiences {
+		t, err := build.LoadTemplateFor(a)
+		if err != nil {
+			return fmt.Errorf("audience %q: %w", name, err)
+		}
+		templates[name] = t
 	}
 	killed := map[string]bool{}
 	for _, s := range p.Shapes {
@@ -298,11 +302,12 @@ func Apply(p *Plan, log func(string, ...any)) error {
 			if i := strings.Index(addr, "@"); i >= 0 {
 				domain = addr[i+1:]
 			}
+			aud := r.Aud()
 			c := build.Contact{
-				Email: addr, FirstName: r.FirstName, Company: r.Company,
+				Audience: aud, Email: addr, FirstName: r.FirstName, Company: r.Company,
 				SafeCompany: it.Name, Title: r.Title, Domain: domain,
 			}
-			nr, doc, err := build.RenderRow(tpl, c, r.Subject, &empty)
+			nr, doc, err := build.RenderRow(templates[aud.Name], c, r.Subject, &empty)
 			if err != nil {
 				return fmt.Errorf("re-rendering %s: %w", addr, err)
 			}
