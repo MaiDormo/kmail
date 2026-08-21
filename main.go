@@ -7,6 +7,7 @@
 //	kmail preview --n 3           render at phone and desktop width, and open it
 //	kmail check                   template, preflight, links, unit tests
 //	kmail send                    dry run unless --send is given
+//	kmail one <address>           one message to somebody not on the list
 //	kmail verify                  reconcile the ledger against Gmail
 //
 // Nothing is sent that `kmail review` has not approved, and review needs a terminal.
@@ -26,6 +27,7 @@ import (
 
 	"golang.org/x/term"
 
+	"kmail/addresses"
 	"kmail/build"
 	"kmail/campaign"
 	"kmail/preflight"
@@ -48,7 +50,7 @@ func run(args []string) int {
 	cmd, rest := args[0], args[1:]
 	if idErr != nil {
 		switch cmd {
-		case "send", "review", "build", "verify":
+		case "send", "review", "build", "verify", "one":
 			fmt.Fprintf(os.Stderr, "no campaign identity: %v\n\n"+
 				"Copy campaign.example.json to %s/campaign.json and fill it in.\n", idErr, campaign.Home)
 			return 1
@@ -69,6 +71,8 @@ func run(args []string) int {
 		return cmdSend(rest)
 	case "verify":
 		return cmdVerify(rest)
+	case "one":
+		return cmdOne(rest)
 	case "sandbox":
 		return cmdSandbox(rest)
 	case "-h", "--help", "help":
@@ -90,6 +94,7 @@ func usage() {
   kmail preview --n 3           render at phone and desktop width, and open it
   kmail check                   template, preflight, links
   kmail send [--send]           dry run unless --send is given
+  kmail one <address>           one message to somebody not on the list
   kmail verify [--write]        reconcile the ledger against Gmail
 
 Exit codes: 0 clean · 1 config · 2 refused, nothing sent · 3 part-way · 4 locked · 5 cap reached
@@ -428,6 +433,54 @@ func cmdSend(args []string) int {
 		Delay: time.Duration(*delay * float64(time.Second)), ToSelf: *toSelf,
 		Only: *only, To: *to,
 	}, os.Stdout, os.Stderr)
+}
+
+// ---------------------------------------------------------------- one
+
+func cmdOne(args []string) int {
+	fs := flag.NewFlagSet("one", flag.ExitOnError)
+	first := fs.String("first-name", "", "greet them by name; omitted gives \"Hi there,\"")
+	title := fs.String("title", "", "their job title, which picks the opener")
+	company := fs.String("company", "", "only accepted if that name was already approved")
+	subject := fs.Int("subject", 0, "which approved subject to use, 0-3")
+	doSend := fs.Bool("send", false, "actually transmit")
+	fs.Parse(args)
+
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: kmail one [flags] <address>")
+		return 1
+	}
+	addr := strings.TrimSpace(fs.Arg(0))
+
+	tpl, err := build.LoadTemplate()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	domain := ""
+	if _, d, ok := strings.Cut(addr, "@"); ok {
+		domain = d
+	}
+	// the same free gate the queue gets: a domain with no MX cannot receive anything
+	if alive := addresses.MXAlive([]string{domain}, logf); !alive[domain] {
+		fmt.Fprintf(os.Stderr, "\n%s has no MX record — nothing can be delivered there.\n", domain)
+		return 1
+	}
+	if *subject < 0 || *subject >= len(campaign.Subjects) {
+		fmt.Fprintf(os.Stderr, "--subject must be 0..%d\n", len(campaign.Subjects)-1)
+		return 1
+	}
+
+	c := build.Contact{
+		Email: addr, FirstName: *first, Company: *company,
+		SafeCompany: build.CleanCompany(*company), Title: *title, Domain: domain,
+	}
+	row, _, err := build.RenderRow(tpl, c, campaign.Subjects[*subject], nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return send.One(row, send.Options{Send: *doSend}, os.Stdout, os.Stderr)
 }
 
 // ---------------------------------------------------------------- verify

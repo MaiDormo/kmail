@@ -311,12 +311,13 @@ func Run(opt Options, out, errOut *os.File) int {
 		toAddr = []string{found.Addr()}
 		p("\nONLY: one message to %s", found.Addr())
 	default:
-		if room == 0 {
+		if room == 0 && opt.Send {
 			e("\ndaily cap of %d already reached. Nothing sent.", cap_)
 			return ExitCap
 		}
 		n := opt.Count
-		if n > room {
+		// on a dry run the cap is reported, not enforced: you still want to see what is next
+		if opt.Send && n > room {
 			n = room
 		}
 		if n > len(queue) {
@@ -335,6 +336,9 @@ func Run(opt Options, out, errOut *os.File) int {
 
 	if !opt.Send {
 		p("\nDRY RUN — would send %d. Add --send to transmit.", len(batch))
+		if room == 0 {
+			p("(the daily cap of %d is reached, so these wait until tomorrow)", cap_)
+		}
 		for i, a := range toAddr {
 			if i == 10 {
 				p("  ... and %d more", len(toAddr)-10)
@@ -347,19 +351,11 @@ func Run(opt Options, out, errOut *os.File) int {
 
 	transport := opt.Transport
 	if transport == nil {
-		password, err := Password()
-		if err != nil {
-			e("\n%v", err)
-			return ExitConfig
+		t, code := smtpTransport(e)
+		if code != ExitOK {
+			return code
 		}
-		auth := smtp.PlainAuth("", campaign.Sender, password, campaign.SMTPHost)
-		transport = func(row preflight.Row, to string) error {
-			msg, err := BuildMessage(row, to, time.Now())
-			if err != nil {
-				return err
-			}
-			return smtp.SendMail(campaign.SMTPHost+":587", auth, campaign.Sender, []string{to}, msg)
-		}
+		transport = t
 	}
 
 	l, err := openLedger()
@@ -479,6 +475,23 @@ var keychainLookup = func(service, account string) (string, error) {
 		return "", err
 	}
 	return strings.TrimRight(string(out), "\r\n"), nil
+}
+
+// smtpTransport is the real one. Anything else is a test.
+func smtpTransport(e func(string, ...any)) (func(preflight.Row, string) error, int) {
+	password, err := Password()
+	if err != nil {
+		e("\n%v", err)
+		return nil, ExitConfig
+	}
+	auth := smtp.PlainAuth("", campaign.Sender, password, campaign.SMTPHost)
+	return func(row preflight.Row, to string) error {
+		msg, err := BuildMessage(row, to, time.Now())
+		if err != nil {
+			return err
+		}
+		return smtp.SendMail(campaign.SMTPHost+":587", auth, campaign.Sender, []string{to}, msg)
+	}, ExitOK
 }
 
 // a fixed interval is a signature; ±40% is still slow enough for a young domain

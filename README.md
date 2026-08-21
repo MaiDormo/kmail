@@ -15,6 +15,7 @@ kmail check                   template, preflight, links
 kmail send [--send]           dry run unless --send is given
 kmail send --only ADDR        just that one queued address, a real send
 kmail send --to ADDR          a copy to yourself; refused if ADDR is in the queue
+kmail one ADDR                one message to somebody not on the list
 kmail verify [--write]        reconcile the ledger against what actually sent
 ```
 
@@ -46,7 +47,9 @@ row uses an unapproved opener shape or company name, another run holds the lock,
 reached.
 
 Approval is stored as the set of shapes and names, not row IDs, so a later build with the same copy
-passes and a new company name does not.
+passes and a new company name does not. That is also what lets `kmail one` mail a referral who was
+never in the CSV: the copy is rendered from an approved shape, so it needs no new approval — and it
+is recorded like any other send, which `--to` deliberately is not.
 
 **Delivery is at most once.** The ledger is written twice per message — `INTENT` and fsync before
 the send, `SENT` and fsync after. A crash between them leaves an address that is never retried.
