@@ -417,12 +417,16 @@ func cmdSend(args []string) int {
 	count := fs.Int("count", 50, "")
 	maxPerDay := fs.Int("max-per-day", 0, "default comes from the warm-up ramp for the domain age")
 	delay := fs.Float64("delay", 4.0, "seconds between messages, before jitter")
-	toSelf := fs.Bool("to-self", false, "one message to "+campaign.Reviewer+" instead, for a rendering check")
+	toSelf := fs.Bool("to-self", false, "one message to the reviewer instead, for a rendering check")
+	only := fs.String("only", "", "send to just this queued address — a real send in every respect")
+	to := fs.String("to", "", "redirect a copy somewhere else for a look; not recorded, and refused "+
+		"if the address is in the queue")
 	fs.Parse(args)
 
 	return send.Run(send.Options{
 		Send: *doSend, Count: *count, MaxPerDay: *maxPerDay,
 		Delay: time.Duration(*delay * float64(time.Second)), ToSelf: *toSelf,
+		Only: *only, To: *to,
 	}, os.Stdout, os.Stderr)
 }
 

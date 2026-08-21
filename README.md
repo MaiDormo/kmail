@@ -13,6 +13,8 @@ kmail review [--file]         the human gate. A TUI, or $EDITOR with --file
 kmail preview --n 3           render at phone and desktop width, and open it
 kmail check                   template, preflight, links
 kmail send [--send]           dry run unless --send is given
+kmail send --only ADDR        just that one queued address, a real send
+kmail send --to ADDR          a copy to yourself; refused if ADDR is in the queue
 kmail verify [--write]        reconcile the ledger against what actually sent
 ```
 

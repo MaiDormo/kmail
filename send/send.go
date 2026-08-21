@@ -44,6 +44,13 @@ type Options struct {
 	Delay     time.Duration
 	ToSelf    bool
 
+	// Only sends just this queued address, a real send in every other respect: the gate applies,
+	// the ledger records it, the daily cap counts it.
+	Only string
+	// To redirects one queued row to somewhere else for a look. The gate does not apply and
+	// nothing is recorded, so it must never be an address the campaign would really mail.
+	To string
+
 	// Transport is replaced in tests. Nil means real SMTP to Gmail.
 	Transport func(row preflight.Row, to string) error
 }
@@ -181,8 +188,12 @@ func Run(opt Options, out, errOut *os.File) int {
 		return ExitRefused
 	}
 
-	// the review gate. to-self goes to the reviewer only, so it is how you look before approving
-	if !opt.ToSelf {
+	if opt.ToSelf {
+		opt.To = campaign.Reviewer
+	}
+
+	// the review gate. a redirected copy goes to you, so it is how you look before approving
+	if opt.To == "" {
 		if refusals := review.Gate(rows); len(refusals) > 0 {
 			e("REFUSED — this copy has not been approved. Nothing sent.\n")
 			for i, r := range refusals {
@@ -245,11 +256,61 @@ func Run(opt Options, out, errOut *os.File) int {
 
 	var batch []preflight.Row
 	var toAddr []string
-	if opt.ToSelf {
-		batch = []preflight.Row{rows[0]}
-		toAddr = []string{campaign.Reviewer}
-		p("\nTO-SELF: one message to %s (the gate does not apply)", campaign.Reviewer)
-	} else {
+	switch {
+	case opt.To != "":
+		// refuse to redirect at someone the campaign would really mail: that would be a way to put
+		// unreviewed copy in front of a prospect
+		want := strings.ToLower(strings.TrimSpace(opt.To))
+		for _, r := range rows {
+			if strings.ToLower(strings.TrimSpace(r.Addr())) == want {
+				e("\n%s is in the queue. --to is for a copy to yourself; use --only to mail a "+
+					"prospect for real.", opt.To)
+				return ExitRefused
+			}
+		}
+		src := rows[0]
+		if opt.Only != "" {
+			found := false
+			for _, r := range rows {
+				if strings.EqualFold(strings.TrimSpace(r.Addr()), strings.TrimSpace(opt.Only)) {
+					src, found = r, true
+					break
+				}
+			}
+			if !found {
+				e("\n%s is not in the queue.", opt.Only)
+				return ExitConfig
+			}
+		}
+		batch = []preflight.Row{src}
+		toAddr = []string{opt.To}
+		p("\nCOPY: %s's message, redirected to %s. The gate does not apply and nothing is recorded.",
+			src.Addr(), opt.To)
+	case opt.Only != "":
+		want := strings.ToLower(strings.TrimSpace(opt.Only))
+		var found *preflight.Row
+		for i := range queue {
+			if strings.ToLower(strings.TrimSpace(queue[i].Addr())) == want {
+				found = &queue[i]
+				break
+			}
+		}
+		if found == nil {
+			if skip[want] {
+				e("\n%s has already been contacted, or is held. Nothing sent.", opt.Only)
+			} else {
+				e("\n%s is not eligible in this queue. Nothing sent.", opt.Only)
+			}
+			return ExitConfig
+		}
+		if room == 0 {
+			e("\ndaily cap of %d already reached. Nothing sent.", cap_)
+			return ExitCap
+		}
+		batch = []preflight.Row{*found}
+		toAddr = []string{found.Addr()}
+		p("\nONLY: one message to %s", found.Addr())
+	default:
 		if room == 0 {
 			e("\ndaily cap of %d already reached. Nothing sent.", cap_)
 			return ExitCap
@@ -317,7 +378,7 @@ func Run(opt Options, out, errOut *os.File) int {
 	p("\nsending %d...", len(batch))
 	for i, row := range batch {
 		to := toAddr[i]
-		if !opt.ToSelf {
+		if opt.To == "" {
 			if err := l.append("INTENT", to, row.Hash); err != nil {
 				e("  cannot write the ledger, stopping before the send: %v", err)
 				return ExitPartial
@@ -336,7 +397,7 @@ func Run(opt Options, out, errOut *os.File) int {
 			time.Sleep(jitter(delay))
 			continue
 		}
-		if !opt.ToSelf {
+		if opt.To == "" {
 			if err := l.append("SENT", to, row.Hash); err != nil {
 				e("  the message left but the ledger did not record it: %v", err)
 				return ExitPartial
@@ -352,7 +413,7 @@ func Run(opt Options, out, errOut *os.File) int {
 	}
 
 	p("\nsent %d, failed %d", ok, failed)
-	if ok > 0 && !opt.ToSelf {
+	if ok > 0 && opt.To == "" {
 		p("now run `kmail verify` to reconcile against Gmail and update the master CSVs")
 	}
 	if failed > 0 {
