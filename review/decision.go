@@ -165,6 +165,19 @@ func Flag(name string, rows []preflight.Row) string {
 	case oddPunc.MatchString(n):
 		return "punctuation a name would not have"
 	}
+	// "no video signal" asks whether the contact is in the video business. That matters only where
+	// the copy claims something about their industry; for an audience whose pitch claims nothing,
+	// every row would be flagged and the screen would be noise.
+	claimsIndustry := false
+	for _, r := range rows {
+		if r.Aud().Name == campaign.DefaultAudience {
+			claimsIndustry = true
+			break
+		}
+	}
+	if !claimsIndustry {
+		return ""
+	}
 	for _, r := range rows {
 		if campaign.VideoSignal.MatchString(r.Company + " " + r.Title + " " + r.Addr()) {
 			return ""
