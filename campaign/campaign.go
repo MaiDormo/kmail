@@ -32,6 +32,7 @@ var (
 	Contacted = filepath.Join(Home, "contacted.txt")
 	Bounced   = filepath.Join(Home, "bounced.txt")
 	Held      = filepath.Join(Home, "held.txt")
+	Blanked   = filepath.Join(Home, "blanked.txt")
 
 	Approvals = filepath.Join(Home, "approvals.json")
 	MXCache   = filepath.Join(Home, "mx-cache.json")
@@ -77,6 +78,7 @@ func SetHome(dir string) {
 	Contacted = filepath.Join(dir, "contacted.txt")
 	Bounced = filepath.Join(dir, "bounced.txt")
 	Held = filepath.Join(dir, "held.txt")
+	Blanked = filepath.Join(dir, "blanked.txt")
 	Approvals = filepath.Join(dir, "approvals.json")
 	MXCache = filepath.Join(dir, "mx-cache.json")
 	Drafts = filepath.Join(dir, "drafts")

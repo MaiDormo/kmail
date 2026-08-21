@@ -47,7 +47,11 @@ row uses an unapproved opener shape or company name, another run holds the lock,
 reached.
 
 Approval is stored as the set of shapes and names, not row IDs, so a later build with the same copy
-passes and a new company name does not. That is also what lets `kmail one` mail a referral who was
+passes and a new company name does not.
+
+A name you strike out is struck out for good: `review` appends it to `blanked.txt` and every later
+`build` renders those contacts with the no-company wording. Review is a decision about the campaign,
+not about one batch — without this, a rebuild puts every bad name straight back. That is also what lets `kmail one` mail a referral who was
 never in the CSV: the copy is rendered from an approved shape, so it needs no new approval — and it
 is recorded like any other send, which `--to` deliberately is not.
 

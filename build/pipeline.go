@@ -157,6 +157,25 @@ func Candidates(rows []csvRow, exclude map[string]bool, requireVideo bool) []Con
 	return out
 }
 
+// LoadBlanked is every company name a review has ever struck out of the copy. Append-only and
+// matched case-insensitively, because the list writes the same company three different ways.
+func LoadBlanked() map[string]bool {
+	out := map[string]bool{}
+	f, err := os.Open(campaign.Blanked)
+	if err != nil {
+		return out
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		if s := strings.ToLower(strings.TrimSpace(sc.Text())); s != "" {
+			out[s] = true
+		}
+	}
+	return out
+}
+
 type BuildOptions struct {
 	Target       int
 	RequireVideo bool
@@ -208,6 +227,19 @@ func Build(opt BuildOptions, log func(string, ...any)) error {
 
 	cands := Candidates(rows, exclude, opt.RequireVideo)
 	log("after dedupe + relevance: %d", len(cands))
+
+	// a name struck out in an earlier review stays struck out: review is a decision about the
+	// campaign, not about one batch
+	if blanked := LoadBlanked(); len(blanked) > 0 {
+		n := 0
+		for i := range cands {
+			if cands[i].SafeCompany != "" && blanked[strings.ToLower(cands[i].SafeCompany)] {
+				cands[i].SafeCompany = ""
+				n++
+			}
+		}
+		log("blanked by earlier reviews: %d of %d contacts keep the no-company wording", n, len(cands))
+	}
 
 	per := map[string]int{}
 	for k, v := range prior {

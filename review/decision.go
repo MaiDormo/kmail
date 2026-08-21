@@ -289,7 +289,7 @@ func Apply(p *Plan, log func(string, ...any)) error {
 	for _, it := range p.Items {
 		r := it.Row
 		if killed[it.Shape] || (it.Name != "" && state[it.Name] == Drop) {
-			dropped = append(dropped, r.Addr())
+			dropped = append(dropped, strings.ToLower(r.Addr()))
 			continue
 		}
 		if it.Name != "" && state[it.Name] == Blank {
@@ -348,6 +348,20 @@ func Apply(p *Plan, log func(string, ...any)) error {
 			return err
 		}
 	}
+	// remember the blanking, or the next build renders these names all over again
+	var newlyBlanked []string
+	known := loadLower(campaign.Blanked)
+	for n, v := range state {
+		if v == Blank && !known[strings.ToLower(n)] {
+			newlyBlanked = append(newlyBlanked, n)
+		}
+	}
+	sort.Strings(newlyBlanked)
+	if len(newlyBlanked) > 0 {
+		if err := appendLines(campaign.Blanked, newlyBlanked); err != nil {
+			return err
+		}
+	}
 
 	sha, err := campaign.TemplateSHA()
 	if err != nil {
@@ -388,6 +402,9 @@ func Apply(p *Plan, log func(string, ...any)) error {
 	log("approved  : %d rows, %d shapes, %d company names", len(kept), len(rec.Shapes), len(rec.Names))
 	log("blanked   : %d rows re-rendered without a company name", reblanked)
 	log("dropped   : %d contacts, written to held.txt", len(dropped))
+	if len(newlyBlanked) > 0 {
+		log("remembered: %d company names, so no future build renders them again", len(newlyBlanked))
+	}
 	log("queue.jsonl rewritten and re-sealed. `kmail send` is now open for these rows.")
 	return nil
 }
@@ -408,6 +425,20 @@ func uniqueSorted(collect func(add func(string))) []string {
 	return out
 }
 
+func loadLower(path string) map[string]bool {
+	out := map[string]bool{}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if s := strings.ToLower(strings.TrimSpace(l)); s != "" {
+			out[s] = true
+		}
+	}
+	return out
+}
+
 func appendLines(path string, lines []string) error {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -415,7 +446,7 @@ func appendLines(path string, lines []string) error {
 	}
 	defer f.Close()
 	for _, l := range lines {
-		if _, err := fmt.Fprintln(f, strings.ToLower(l)); err != nil {
+		if _, err := fmt.Fprintln(f, l); err != nil {
 			return err
 		}
 	}
